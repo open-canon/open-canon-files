@@ -3,10 +3,29 @@
 The Open Canon Schema is a data model for representing the text of scripture in a machine-readable format. The schema is
 designed to be flexible and extensible.
 """
+
 from __future__ import annotations
 import pydantic
 import warnings
+from typing import Any
+import pathlib
 from typing_extensions import Self
+import json
+
+
+class FilePathReferencable(pydantic.BaseModel):
+    """An object that can be referenced by a file path."""
+
+    @pydantic.model_validator(mode="before")
+    @classmethod
+    def validate_id(cls, data: Any) -> Any:
+        """If the object is a file path, load the object from the file path, cache the object, and return the object."""
+
+        if isinstance(data, (str, pathlib.Path)):
+            data = json.loads(pathlib.Path(data).read_text(encoding="utf-8"))
+            # TODO: Add a model validator that caches the object so that multiple references to the same file path return the
+            # same object.
+        return data
 
 
 class Verse(pydantic.BaseModel):
@@ -31,7 +50,7 @@ class Verse(pydantic.BaseModel):
         return self
 
 
-class Chapter(pydantic.BaseModel):
+class Chapter(FilePathReferencable):
     """A chapter of scripture."""
 
     title: str | None = pydantic.Field(description="The title of the chapter.")
@@ -41,7 +60,7 @@ class Chapter(pydantic.BaseModel):
     )
 
 
-class Section(pydantic.BaseModel):
+class Section(FilePathReferencable):
     """A section of scripture.
 
     A section of scripture is a collection of chapters that are grouped together for a specific purpose by the original
@@ -56,7 +75,7 @@ class Section(pydantic.BaseModel):
     )
 
 
-class Book(pydantic.BaseModel):
+class Book(FilePathReferencable):
     """A book of scripture.
 
     A book of scripture is a collection of chapters that may or may not be divided into sections. Generally, a book is
@@ -79,9 +98,32 @@ class Book(pydantic.BaseModel):
         description="A short title of the book.",
         examples=["Gen", "Exo", "Lev", "Alma", "D&C"],
     )
+    language: str = pydantic.Field(
+        description=(
+            "The language of the book's text. "
+            "If this is a translation, then this is the target language of the translation, i.e. the included text."
+        ),
+        examples=["en", "es", "pt", "zh", "ru"],
+    )
+    header: str | None = pydantic.Field(
+        default=None, description="The header of the book."
+    )
+    footer: str | None = pydantic.Field(
+        default=None, description="The footer of the book."
+    )
+    author: str | list[str] | None = pydantic.Field(
+        default=None, description="The author(s) of the book."
+    )
+    metadata: dict[str, str] | None = pydantic.Field(
+        default=None,
+        description=(
+            "A dictionary of metadata about the book, where the key is the metadata key and the value is the "
+            "metadata value."
+        ),
+    )
 
 
-class Volume(pydantic.BaseModel):
+class Volume(FilePathReferencable):
     """A volume of books.
 
     A volume is a collection of individual books that have been compiled into a single, larger work.
@@ -99,4 +141,26 @@ class Volume(pydantic.BaseModel):
     )
     books: dict[str, Book] = pydantic.Field(
         description="A dictionary of books, where the key is the book title and the value is the book."
+    )
+
+
+class Manifest(pydantic.BaseModel):
+    """A manifest for an Open Canon Schema repository.
+
+    An Open Canon Schema repository may contain multiple books and/or volumes of scripture. The manifest provides a
+    high-level overview of the contents of the repository.
+    """
+
+    volumes: dict[str, Volume] = pydantic.Field(
+        description="A dictionary of volumes, where the key is the volume title and the value is the volume."
+    )
+    books: dict[str, Book] = pydantic.Field(
+        description="A dictionary of books, where the key is the book title and the value is the book."
+    )
+    metadata: dict[str, str] | None = pydantic.Field(
+        default=None,
+        description=(
+            "A dictionary of metadata about the manifest, where the key is the metadata key and the value is the "
+            "metadata value."
+        ),
     )
